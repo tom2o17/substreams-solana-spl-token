@@ -39,7 +39,7 @@ modules:
 network: solana
 params:
   map_block: token_contract:MangoCzJ36AjZyKwVj3VnYU4GTonjfVEnJmvvWaxLac
-  solana:transactions_by_programid_without_votes: program:TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA
+  solana:transactions_by_programid_without_votes: (program:TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA || program:TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb)
 
 sink:
   module: db_out
