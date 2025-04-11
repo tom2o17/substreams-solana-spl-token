@@ -8,6 +8,11 @@ use crate::pb::{
 };
 use substreams::{pb::substreams::Clock, skip_empty_output};
 use substreams_solana::pb::sf::solana::r#type::v1::ConfirmedTransaction;
+// use solana_sdk::pubkey::Pubkey;  // Import Pubkey from solana-sdk
+
+// // Define the excluded program ID
+const TOKEN_2022_PROGRAM: &str = "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb";
+
 
 #[substreams::handlers::map]
 fn map_block(
@@ -16,11 +21,15 @@ fn map_block(
     trxs: Transactions,
 ) -> Result<Events, substreams::errors::Error> {
     skip_empty_output();
-    let colon_index = params
-        .find(":")
-        .expect("Invalid params, must be of the form token_contract:<address>");
-    let token_contract = &params[colon_index + 1..];
-
+    
+    // Split the params string correctly to extract token contracts after 'token_contract:'
+    let token_contracts: Vec<&str> = params
+        .split(':')    // First split at ':'
+        .skip(1)       // Skip the first part (before the colon)
+        .collect::<Vec<&str>>()[0]   // Get the part after ':'
+        .split(',')    // Split by comma to handle multiple token contracts
+        .collect();    // Collect into a vector
+    
     let block_height = clock.number;
     let block_timestamp = clock
         .timestamp
@@ -29,20 +38,26 @@ fn map_block(
         .unwrap_or_default();
 
     let mut data: Vec<Event> = Vec::new();
+    
     for confirmed_txn in trxs.transactions {
         if confirmed_txn.meta().is_none() {
             continue;
         }
 
         let tx_id = confirmed_txn.id();
+        
         for (i, instruction) in confirmed_txn.walk_instructions().enumerate() {
-            if instruction.program_id() != spl_token::ID {
+            if instruction.program_id() != spl_token::ID && instruction.program_id().to_string() != TOKEN_2022_PROGRAM {
                 continue;
             }
 
-            let token_instruction =
-                spl_token::instruction::TokenInstruction::unpack(instruction.data())?;
 
+            // Use match to handle unpack errors gracefully
+            let token_instruction = match spl_token::instruction::TokenInstruction::unpack(instruction.data()) {
+                Ok(instr) => instr,
+                Err(_) => continue, // Skip if unpack fails
+            };
+            
             let event = match Type::try_from((token_instruction, &instruction)) {
                 Ok(event_type) => Event {
                     txn_id: tx_id.clone(),
@@ -55,13 +70,16 @@ fn map_block(
                 Err(_) => continue,
             };
 
-            if event
-                .r#type
-                .as_ref()
-                .unwrap()
-                .is_for_token_contract(&confirmed_txn, &token_contract)
-            {
-                data.push(event);
+            // Iterate over each token contract and filter events
+            for token_contract in &token_contracts {
+                if event
+                    .r#type
+                    .as_ref()
+                    .unwrap()
+                    .is_for_token_contract(&confirmed_txn, token_contract)
+                {
+                    data.push(event.clone());
+                }
             }
         }
     }
@@ -92,44 +110,35 @@ impl Type {
                 accounts.as_ref().unwrap().mint == contract
             }
             Type::InitializeImmutableOwner(InitializeImmutableOwner { accounts: _, .. }) => {
-                // FIXME: How to filter that out?
                 false
             }
             Type::InitializeAccount(InitializeAccount { accounts, .. }) => {
                 accounts.as_ref().unwrap().mint == contract
             }
             Type::InitializeMultisig(InitializeMultisig { accounts: _, .. }) => {
-                // FIXME: How to filter that out?
                 false
             }
             Type::Approve(Approve { accounts: _, .. }) => {
-                // FIXME: How to filter that out?
                 false
             }
             Type::MintTo(MintTo { accounts, .. }) => accounts.as_ref().unwrap().mint == contract,
             Type::Revoke(Revoke { accounts: _, .. }) => {
-                // FIXME: How to filter that out?
                 false
             }
             Type::SetAuthority(SetAuthority { accounts: _, .. }) => {
-                // FIXME: How to filter that out?
                 false
             }
             Type::Burn(Burn { accounts, .. }) => accounts.as_ref().unwrap().mint == contract,
             Type::CloseAccount(CloseAccount { accounts: _, .. }) => {
-                // FIXME: How to filter that out?
                 false
             }
             Type::FreezeAccount(FreezeAccount { accounts: _, .. }) => {
-                // FIXME: How to filter that out?
                 false
             }
             Type::ThawAccount(ThawAccount { accounts: _, .. }) => {
-                // FIXME: How to filter that out?
                 false
             }
             Type::SyncNative(SyncNative { accounts: _, .. }) => {
-                // FIXME: How to filter that out?
                 false
             }
         }
